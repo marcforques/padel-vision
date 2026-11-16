@@ -1,0 +1,15 @@
+# Datos y modelos (pesados o con derechos)
+data/bronze/
+data/silver/
+*.mp4
+*.zip
+*.pt
+*.duckdb
+
+# Python
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+
+# Secretos
+.env
