@@ -13,3 +13,4 @@ __pycache__/
 
 # Secretos
 .envdata/sample/frames/
+data/sample/frames/
