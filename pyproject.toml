@@ -1,10 +1,10 @@
 [project]
 name = "padel-vision"
 version = "0.1.0"
-description = "Add your description here"
+description = "Análisis táctico de pádel con visión artificial: posicionamiento de jugadores y métricas en pista a partir de vídeo"
 readme = "README.md"
 authors = [
-    { email = "forquesm@gmail.com" }
+    { name = "Marc Forqués Isasi", email = "forquesm@gmail.com" }
 ]
 requires-python = ">=3.11"
 dependencies = [
@@ -16,12 +16,20 @@ dependencies = [
     "pandas>=3.1.1",
     "pyarrow>=26.0.1",
     "scipy>=1.17.1",
+    "torch>=2.14.1",
+    "torchvision>=0.29.1",
     "ultralytics>=8.4.215",
 ]
-
-[project.scripts]
-padel-vision = "padel_vision:main"
 
 [build-system]
 requires = ["uv_build>=0.13.3,<0.14.0"]
 build-backend = "uv_build"
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }
+torchvision = { index = "pytorch-cu126" }
