@@ -20,7 +20,13 @@ CREATE TABLE dim_calibracion (
     n_puntos          INTEGER,
     homografia        DOUBLE[],  -- matriz H 3x3 aplanada (9 valores)
     error_loo_medio_m DOUBLE,
-    error_loo_max_m   DOUBLE
+    error_loo_max_m   DOUBLE,
+    camara_x_m        DOUBLE,    -- posición estimada de la cámara
+    camara_y_m        DOUBLE,
+    camara_z_m        DOUBLE,
+    focal_px          DOUBLE,
+    error_reproy_px   DOUBLE,
+    altura_tobillo_m  DOUBLE     -- altura usada en la corrección de paralaje
 );
 
 CREATE TABLE dim_puesto (

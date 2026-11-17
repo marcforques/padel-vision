@@ -1,5 +1,5 @@
 match_id,lado,fuente,pct_red,pct_fondo,n_frames
-2022_BCN_FinalF_1,lejos,gt,13.5,86.5,45703
-2022_BCN_FinalM_1,lejos,gt,17.5,82.5,52592
-2022_BCN_FinalF_1,cerca,gt,29.6,70.4,45703
-2022_BCN_FinalM_1,cerca,gt,38.3,61.7,52592
+2022_BCN_FinalM_1,lejos,gt,52.5,47.5,52830
+2022_BCN_FinalM_1,cerca,gt,53.1,46.9,52830
+2022_BCN_FinalF_1,lejos,gt,47.0,53.0,45766
+2022_BCN_FinalF_1,cerca,gt,48.0,52.0,45766

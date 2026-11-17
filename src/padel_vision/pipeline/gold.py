@@ -1,7 +1,10 @@
-"""Silver -> Gold: posiciones en metros, puestos en pista y zona (red/fondo).
+"""Silver -> Gold: posiciones en metros, puestos en pista y zona (red/fondo)
 
-La fuente 'gt' es el ground truth de PadelTracker100 (tobillos anotados) proyectado
-con nuestra homografía. 
+La fuente 'gt' es el ground truth de PadelTracker100 (tobillos anotados) proyectado a la
+pista. En la Entrega 3, los modelos añadirán filas con otras fuentes ('baseline', 'pose')
+a la misma tabla, para compararlas en igualdad de condiciones.
+
+Proyección a metros = homografía (precisa en el suelo) + corrección de paralaje del tobillo (modelo 3D de la cámara).
 
 Gold se reconstruye desde cero en cada ejecución (pipeline determinista).
 Si se vuelve a ejecutar, hay que relanzar después los modelos.
@@ -13,6 +16,7 @@ import duckdb
 import numpy as np
 import pandas as pd
 
+from padel_vision.vision.camara import Camara, calibrar_camara, px_a_metros_altura
 from padel_vision.vision.pista import (
     ANCHO, LARGO, RED_Y,
     calcular_homografia, cargar_calibracion, error_validacion,
@@ -27,8 +31,9 @@ DB = RAIZ / "data/gold/padel.duckdb"
 SCHEMA = RAIZ / "db/schema.sql"
 
 FPS = 30.0
-UMBRAL_RED_M = 4.0    # a menos de 4 m de la red = "en la red"
-MARGEN_PISTA_M = 1.0  # margen fuera de las líneas antes de descartar a alguien
+ALTURA_TOBILLO_M = 0.12  # altura del tobillo sobre el suelo, ajustada con analisis/simetria.py
+UMBRAL_RED_M = 5.5       # revisa con analisis/simetria.py
+MARGEN_PISTA_M = 1.0     # margen fuera de las líneas antes de descartar a alguien
 
 PARTIDOS = {"2022_BCN_FinalF_1": "femenino", "2022_BCN_FinalM_1": "masculino"}
 PUESTOS = [
@@ -39,12 +44,20 @@ PUESTOS = [
 ]
 
 
-def proyectar(df: pd.DataFrame, H: np.ndarray) -> pd.DataFrame:
-    """Añade el punto de suelo en píxeles y su posición en metros."""
+def proyectar(df: pd.DataFrame, H: np.ndarray, cam: Camara,
+              altura_m: float = ALTURA_TOBILLO_M) -> pd.DataFrame:
+    """Añade el punto de apoyo en píxeles y su posición en metros.
+
+    1. La homografía da la posición suponiendo que el tobillo está en el suelo.
+    2. El modelo de cámara calcula cuánto se desplaza ese punto si en realidad está a
+       `altura_m` metros, y se suma ese desplazamiento (corrección de paralaje).
+    """
     df = df.copy()
     suelo = punto_suelo_px(df)
     df["u_px"], df["v_px"] = suelo[:, 0], suelo[:, 1]
-    xy = px_a_metros(H, suelo)
+    xy_suelo = px_a_metros(H, suelo)
+    correccion = px_a_metros_altura(cam, suelo, altura_m) - px_a_metros_altura(cam, suelo, 0.0)
+    xy = xy_suelo + correccion
     df["x_m"], df["y_m"] = xy[:, 0], xy[:, 1]
     return df.dropna(subset=["x_m", "y_m"])
 
@@ -71,15 +84,17 @@ def asignar_puestos(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def zona(df: pd.DataFrame) -> pd.DataFrame:
+def zona(df: pd.DataFrame, umbral_m: float = UMBRAL_RED_M) -> pd.DataFrame:
     df = df.copy()
     df["dist_red_m"] = (df["y_m"] - RED_Y).abs()
-    df["zona"] = np.where(df["dist_red_m"] < UMBRAL_RED_M, "red", "fondo")
+    df["zona"] = np.where(df["dist_red_m"] < umbral_m, "red", "fondo")
     return df
 
 
 def info_video(partido: str) -> tuple[int, int, int]:
     cap = cv2.VideoCapture(str(VIDEOS / f"{partido}.mp4"))
+    if not cap.isOpened():
+        raise FileNotFoundError(f"No se encuentra el vídeo de {partido} en {VIDEOS}")
     datos = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
              int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
              int(cap.get(cv2.CAP_PROP_FRAME_COUNT)))
@@ -106,14 +121,18 @@ def main():
         pts_px, pts_m = cargar_calibracion(partido)
         H = calcular_homografia(pts_px, pts_m)
         loo = error_validacion(pts_px, pts_m)
+        cam = calibrar_camara(pts_px, pts_m, ancho, alto)
+        cx, cy, cz = cam.centro
         con.execute(
-            "INSERT INTO dim_calibracion VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO dim_calibracion VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [partido, 0, len(pts_px), H.flatten().tolist(),
-             loo["error_medio_m"], loo["error_max_m"]],
+             loo["error_medio_m"], loo["error_max_m"],
+             float(cx), float(cy), float(cz), float(cam.K[0, 0]), cam.rms_px,
+             ALTURA_TOBILLO_M],
         )
 
         silver = pd.read_parquet(SILVER / f"{partido}_pose.parquet")
-        proyectado = proyectar(silver, H)
+        proyectado = proyectar(silver, H, cam)
         en_pista = filtrar_pista(proyectado)
         con_puesto = asignar_puestos(en_pista)
         gold = zona(con_puesto)
@@ -131,6 +150,8 @@ def main():
         con.unregister("gold_df")
 
         print(f"\n{partido}")
+        print(f"  cámara estimada (x, y, z) m:  ({cx:.2f}, {cy:.2f}, {cz:.2f}) | "
+              f"focal {cam.K[0, 0]:.0f} px | error reproyección {cam.rms_px:.1f} px")
         print(f"  personas en Silver:          {len(silver)}")
         print(f"  descartadas fuera de pista:  {len(proyectado) - len(en_pista)}")
         print(f"  frames en Silver:            {silver['frame'].nunique()}")
@@ -147,7 +168,7 @@ def main():
         JOIN dim_puesto d USING (puesto_id)
         GROUP BY p.match_id, d.lado, p.fuente
     """)
-    print("\nMétrica (% del tiempo en red por lado):")
+    print(f"\nMétrica (% del tiempo en red por lado, umbral {UMBRAL_RED_M} m):")
     print(con.sql("SELECT * FROM fact_metrica ORDER BY match_id, lado").df())
 
     SAMPLE.mkdir(parents=True, exist_ok=True)

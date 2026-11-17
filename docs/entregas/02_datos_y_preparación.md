@@ -7,7 +7,7 @@
 
 ## 1. Qué datos necesita el producto
 
-El producto convierte el vídeo de un partido, grabado con una cámara fija, en posiciones de los jugadores sobre la pista (en metros) y en métricas tácticas. La primera métrica del MVP es el **porcentaje de tiempo que cada pareja pasa en la zona de red frente a la zona de fondo**.
+El producto convierte el vídeo de un partido, grabado con una cámara fija, en posiciones de los jugadores sobre la pista (en metros) y en métricas tácticas. La primera métrica del MVP es el **porcentaje de tiempo que cada pareja pasa en la zona de red frente a la zona de fondo** (en esta fase se calcula por lado de la pista. Ver Riesgos y limitaciones).
 
 **Qué representa una observación:** un jugador en un frame del vídeo (frame × jugador). A 30 fps, un partido de una hora genera unas 430.000 observaciones (4 jugadores × 108.000 frames).
 
@@ -27,13 +27,15 @@ El producto convierte el vídeo de un partido, grabado con una cámara fija, en 
 
 | Fuente | Rol | Acceso | Cobertura | Estabilidad |
 |---|---|---|---|---|
-| **Vídeo del usuario o del club** | Fuente real del producto en producción | El usuario sube el archivo de vídeo | Cualquier partido grabado con cámara fija | Depende del usuario; formato estándar (MP4) |
-| **PadelTracker100** | Desarrollo y validación (*ground truth*) | Descarga directa desde Zenodo (https://doi.org/10.5281/zenodo.14653706) | 2 partidos completos (finales femenina y masculina del WPT Barcelona 2022), 1920×1080 a 30 fps, unos 100.000 frames | Alta: repositorio científico con DOI permanente; dataset estático |
+| **Vídeo del usuario o del club** | Fuente real del producto en producción | El usuario sube el archivo de vídeo | Cualquier partido grabado con cámara fija | Depende del usuario, formato estándar (MP4) |
+| **PadelTracker100** | Desarrollo y validación (*ground truth*) | Descarga directa desde Zenodo (https://doi.org/10.5281/zenodo.14653706)) | 2 partidos (finales femenina y masculina del WPT Barcelona 2022): unos 25 y 30 minutos de vídeo editado, 1920×1080 a 30 fps, unos 100.000 frames | Alta: repositorio científico con DOI permanente; dataset estático |
 | **Vídeos amateur propios** | Prueba de robustez en condiciones reales | Partidos grabados por un familiar, cedidos con consentimiento | En curso | Datos propios |
 
 **Por qué PadelTracker100 y no otra fuente:** es el único dataset público de pádel con anotaciones manuales de pose (17 puntos del cuerpo por jugador y frame) a esta escala. Las anotaciones se generaron de forma semiautomática y después se **refinaron a mano**, lo que permite usarlas como referencia para medir el error de nuestro sistema.
 
-**Importante:** PadelTracker100 **no es la fuente del producto**, sino la herramienta para validarlo. En producción, el dato es el propio vídeo que aporta el usuario o el club, y es renovable: cada partido nuevo es un dato nuevo.
+**Importante:** PadelTracker100 **no es la fuente del producto**, sino la herramienta para validarlo. En producción, el dato es el propio vídeo que aporta el usuario o el club, y es renovable, cada partido nuevo es un dato nuevo.
+
+**Plan B:** si PadelTracker100 dejara de estar disponible, se usaría el dataset PadelVic (partido amateur con posiciones estimadas) o se anotaría manualmente una muestra de frames de vídeos propios (150–300 frames bastan para validar).
 
 ---
 
@@ -83,7 +85,7 @@ Problemas encontrados en los datos y decisión tomada:
 
 | Problema | Decisión |
 |---|---|
-| En el partido masculino faltan **65 frames** sin anotar (a partir del frame 325). El identificador interno de imagen (`image_id`) queda desalineado con el vídeo | El número de frame se obtiene del **nombre del fichero** (`frame_000123.PNG`), nunca del `image_id` |
+| En el partido masculino faltan **65 frames** sin anotar (a partir del frame 325), el identificador interno de imagen (`image_id`) queda desalineado con el vídeo | El número de frame se obtiene del **nombre del fichero** (`frame_000123.PNG`), nunca del `image_id` |
 | El **orden de los 17 puntos del cuerpo es distinto** entre los dos partidos (izquierda y derecha intercambiadas) | Los puntos se normalizan **por nombre** a un orden canónico |
 | Puntos del cuerpo no anotados | Se convierten en valores nulos (NaN) |
 | Anotaciones **duplicadas** (dos cajas casi idénticas para la misma persona) | Se eliminan si se solapan más de un 70 % (IoU > 0,7) |
@@ -106,7 +108,7 @@ Script: `src/padel_vision/vision/pista.py`
 
 Para pasar de píxeles a metros se calcula una **homografía**: una transformación que lleva los puntos del suelo en la imagen a sus posiciones en una vista cenital de la pista (20 × 10 m). Se calcula a partir de los 10 puntos de calibración.
 
-- **Punto de apoyo de cada jugador:** punto medio de los dos tobillos. La homografía solo es válida para puntos del suelo; el centro del cuerpo está a casi un metro de altura y se proyectaría en una posición errónea.
+- **Punto de apoyo de cada jugador:** punto medio de los dos tobillos. La homografía solo es válida para puntos del suelo. El centro del cuerpo está a casi un metro de altura y se proyectaría en una posición errónea.
 - **Validación (*leave-one-out*):** para cada punto de calibración se calcula la homografía sin él y se mide el error al proyectarlo.
 
 | | Error medio | Error máximo |
@@ -118,6 +120,29 @@ Los errores mayores se concentran en las esquinas de la pista, más difíciles d
 
 [Jugadores del primer frame proyectados sobre la pista](../img/homografia_frame_inicial.png)
 
+### Corrección de la altura del tobillo (paralaje)
+
+Módulo: `src/padel_vision/vision/camara.py` · Análisis: `src/padel_vision/analisis/simetria.py`
+
+**Problema detectado.** Al analizar las posiciones, el lado de la pista lejano a la cámara aparecía desplazado casi 1 m respecto al cercano. Como las parejas se cambian de lado durante el partido, ambos lados deberían tener una distribución de posiciones parecida. La diferencia era un error sistemático de la medida, no táctica.
+
+**Causa.** El tobillo no está en el suelo. La homografía lo proyecta a lo largo del rayo de la cámara hasta el suelo y lo sitúa más lejos de la cámara de lo que está. El efecto crece con la distancia, por eso era mayor en el campo lejano.
+
+**Solución.** Se estima un **modelo 3D de la cámara** a partir de los mismos puntos de calibración (focal, posición y orientación). Para cada jugador se calcula dónde corta el rayo de la cámara el plano a la altura del tobillo, y ese desplazamiento se suma a la posición de la homografía. Así se combina la precisión de la homografía en el suelo con la corrección por altura que solo puede dar el modelo 3D.
+
+- **Cámara estimada:** a 16,7 m por detrás del fondo cercano, centrada y a 7,9 m de altura. Calibrando cada partido por separado, la posición coincide con 2 cm de diferencia, lo que confirma que la calibración es consistente.
+
+**Ajuste y validación por simetría.** La altura del tobillo se elige como la que hace más parecidas las distribuciones de ambos lados (distancia de Wasserstein), probando de 0 a 20 cm:
+
+| Altura del tobillo | Diferencia entre lados |
+|---|---|
+| 0 m (sin corrección) | 0,81 m |
+| **0,12 m (óptima)** | **0,087 m (−89 %)** |
+
+La altura óptima es la misma en los dos partidos (11–13 cm) y es físicamente coherente: el punto anotado como tobillo es el maléolo, a unos 7–9 cm del pie, más unos 3 cm de suela de la zapatilla.
+
+[Distancia a la red por lado, antes y después de la corrección](../img/simetria_antes_despues.png)
+
 ### Gold — dato modelado para su uso
 
 Script: `src/padel_vision/pipeline/gold.py` → base de datos DuckDB `data/gold/padel.duckdb` (se genera con el script, en el repo está el esquema `db/schema.sql`).
@@ -127,23 +152,32 @@ Script: `src/padel_vision/pipeline/gold.py` → base de datos DuckDB `data/gold/
 | Tabla | Tipo | Contenido |
 |---|---|---|
 | `dim_partido` | Dimensión | Partido, categoría, fuente, licencia, fps, resolución |
-| `dim_calibracion` | Dimensión | Matriz de homografía y su error de validación (trazabilidad de cada posición) |
+| `dim_calibracion` | Dimensión | Homografía, modelo de cámara (posición, focal, error) y altura del tobillo usada: trazabilidad de cada posición |
 | `dim_puesto` | Dimensión | Puestos en la pista: lado (cerca/lejos de la cámara) y posición (izquierda/derecha) |
 | `fact_posicion` | Hechos | **Una fila = un jugador en un frame según una fuente**: posición en píxeles, en metros, distancia a la red y zona (red/fondo) |
 | `fact_metrica` | Hechos | Porcentaje de tiempo en red y en fondo por partido, lado y fuente |
 
-**Clave del diseño:** la columna `fuente` de `fact_posicion`. Ahora contiene el *ground truth* (`gt`). En la siguiente fase, los modelos escribirán sus predicciones en la misma tabla (`baseline`, `pose`), lo que permite compararlos con el *ground truth* mediante una simple consulta. Los resultados de los modelos vuelven así a Gold, y el frontal solo leerá de esta capa.
+**Clave del diseño:** la columna `fuente` de `fact_posicion`. Ahora contiene el *ground truth* (`gt`); en la siguiente fase, los modelos escribirán sus predicciones en la misma tabla (`baseline`, `pose`), lo que permite compararlos con el *ground truth* mediante una simple consulta. Los resultados de los modelos vuelven así a Gold, y el frontal solo leerá de esta capa.
 
 Transformaciones de Silver a Gold:
-1. Proyección del punto de apoyo a metros con la homografía.
+1. Proyección del punto de apoyo a metros: homografía + corrección de la altura del tobillo (0,12 m).
 2. **Eliminación de personas fuera de la pista** (más de 1 m fuera de las líneas): recogepelotas, árbitros y jugadores que salen por las puertas laterales.
 3. **Asignación de puestos:** se conservan los frames con exactamente 2 jugadores a cada lado de la red. Los cambios de lado (jugadores cruzando la red) no son juego y se excluyen.
-4. **Zona:** red si el jugador está a menos de 4 m de la red, fondo en caso contrario. *Valor provisional, elegido por criterio de juego. Se revisará con la distribución real de posiciones (ver Riesgos y limitaciones).*
+4. **Zona:** red si el jugador está a menos de **5,5 m** de la red; fondo en caso contrario. El umbral se ha decidido con los datos: la distribución de distancias a la red tiene dos picos (jugadores en red, hacia 4 m; y al fondo, hacia 7,5–8 m), y el valle entre ambos está en 5,6–5,7 m en los dos partidos. Poner el umbral en el valle hace la métrica robusta, un pequeño error de posición apenas cambia la zona de nadie. Un umbral inicial de 4 m, elegido por intuición, cortaba el pico de red por la mitad.
 
 | | Femenino | Masculino |
 |---|---|---|
-| Personas descartadas fuera de pista | 117 | 381 |
-| Frames válidos (2 + 2 jugadores) | 45.703 (99,5 %) | 52.592 (97,6 %) |
+| Personas descartadas fuera de pista | 62 | 340 |
+| Frames válidos (2 + 2 jugadores) | 45.766 (99,6 %) | 52.830 (98,0 %) |
+
+**Métrica resultante** (`fact_metrica`, porcentaje del tiempo en la zona de red):
+
+| | Lado cercano | Lado lejano |
+|---|---|---|
+| Femenino | 48,0 % | 47,0 % |
+| Masculino | 53,1 % | 52,5 % |
+
+Antes de la corrección, la diferencia entre lados era de 16–21 puntos Y ahora es de menos de 1 punto, como se espera cuando las parejas se reparten el tiempo en ambos lados.
 
 ### Cómo reproducirlo
 
@@ -154,19 +188,25 @@ uv sync
 uv run python src/padel_vision/vision/marcar_pista.py 2022_BCN_FinalF_1
 # 3. Pipeline
 uv run python src/padel_vision/pipeline/silver.py
+uv run python -m padel_vision.analisis.simetria   # ajuste de la altura del tobillo y del umbral
 uv run python -m padel_vision.pipeline.gold
 ```
 
-Muestras de cada capa en `data/sample/`.
-
+Muestras de cada capa en `data/sample/`:
+ 
+| Capa | Fichero |
+|---|---|
+| Bronze | `bronze_2022_BCN_FinalF_1_pose_muestra.json` (primeros 50 frames del JSON original) |
+| Silver | `silver_<partido>_pose.csv` (200 filas) |
+| Gold | `gold_fact_posicion.csv` (200 filas) y `gold_fact_metrica.csv` |
+ 
 ---
+
 
 ## 5. Riesgos y limitaciones
 
-- **Sesgo sistemático entre lados de la pista (detectado, en corrección).** Como las parejas se cambian de lado durante el partido, ambos lados deberían tener una distribución de posiciones parecida. Sin embargo, el lado lejano aparece desplazado casi 1 m respecto al cercano, y con el umbral de 4 m el porcentaje de tiempo en red sale del 30 % en el lado cercano frente al 13 % en el lejano (femenino). La causa principal es que el tobillo no está en el suelo, sino a unos 10 cm de altura, y la homografía lo desplaza a lo largo del rayo de la cámara. En la siguiente fase se corregirá con un modelo 3D de la cámara y se validará comprobando que ambos lados se igualan. El umbral de red también se revisará con los datos.
-
-[Distancia a la red por lado de la pista](../img/distancia_red_por_lado.png)
-
+- **Validación indirecta de la posición:** el *ground truth* contiene la pose en píxeles, no la posición en metros. La conversión a metros se valida con la calibración (*leave-one-out*, 10–15 cm) y con la simetría entre lados, pero no con una medición independiente en pista.
+- **Distorsión de la lente:** no se modela. Es la causa más probable de que los mayores errores de calibración estén en las esquinas de la pista.
 - **Lado frente a pareja:** la métrica actual se calcula por lado de la pista, no por pareja. Para atribuirla a cada pareja se identificará su equipación por color (agrupación K-Means sobre el torso de cada jugador).
 - **Poca variedad en el *ground truth*:** solo hay 2 partidos profesionales, en la misma pista y con la misma cámara. La robustez en vídeo amateur se evaluará con vídeos propios.
 - **Calibración manual:** cada vídeo requiere marcar a mano los puntos de la pista (unos 2 minutos). Automatizarlo es una mejora futura.
