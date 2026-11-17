@@ -1,0 +1,77 @@
+{
+  "match_id": "2022_BCN_FinalF_1",
+  "frame": 0,
+  "sistema": "origen en esquina izquierda del fondo cercano; x a lo ancho (0-10 m), y a lo largo (0-20 m)",
+  "puntos": [
+    {
+      "nombre": "fondo_cerca_izq",
+      "x_m": 0.0,
+      "y_m": 0.0,
+      "u_px": 210,
+      "v_px": 946
+    },
+    {
+      "nombre": "fondo_cerca_der",
+      "x_m": 10.0,
+      "y_m": 0.0,
+      "u_px": 1717,
+      "v_px": 944
+    },
+    {
+      "nombre": "saque_cerca_izq",
+      "x_m": 0.0,
+      "y_m": 3.05,
+      "u_px": 311,
+      "v_px": 784
+    },
+    {
+      "nombre": "saque_cerca_T",
+      "x_m": 5.0,
+      "y_m": 3.05,
+      "u_px": 961,
+      "v_px": 784
+    },
+    {
+      "nombre": "saque_cerca_der",
+      "x_m": 10.0,
+      "y_m": 3.05,
+      "u_px": 1612,
+      "v_px": 784
+    },
+    {
+      "nombre": "saque_lejos_izq",
+      "x_m": 0.0,
+      "y_m": 16.95,
+      "u_px": 562,
+      "v_px": 369
+    },
+    {
+      "nombre": "saque_lejos_T",
+      "x_m": 5.0,
+      "y_m": 16.95,
+      "u_px": 959,
+      "v_px": 370
+    },
+    {
+      "nombre": "saque_lejos_der",
+      "x_m": 10.0,
+      "y_m": 16.95,
+      "u_px": 1360,
+      "v_px": 366
+    },
+    {
+      "nombre": "fondo_lejos_izq",
+      "x_m": 0.0,
+      "y_m": 20.0,
+      "u_px": 595,
+      "v_px": 317
+    },
+    {
+      "nombre": "fondo_lejos_der",
+      "x_m": 10.0,
+      "y_m": 20.0,
+      "u_px": 1324,
+      "v_px": 311
+    }
+  ]
+}
